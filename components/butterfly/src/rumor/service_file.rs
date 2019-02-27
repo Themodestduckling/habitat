@@ -16,15 +16,6 @@
 //!
 //! Holds the toml configuration injected for a service.
 
-use std::{cmp::Ordering,
-          mem,
-          str::FromStr};
-
-use habitat_core::{crypto::{default_cache_key_path,
-                            keys::box_key_pair::WrappedSealedBox,
-                            BoxKeyPair},
-                   service::ServiceGroup};
-
 use crate::{error::{Error,
                     Result},
             protocol::{self,
@@ -34,6 +25,14 @@ use crate::{error::{Error,
             rumor::{Rumor,
                     RumorPayload,
                     RumorType}};
+use habitat_core::{crypto::{default_cache_key_path,
+                            keys::box_key_pair::WrappedSealedBox,
+                            BoxKeyPair},
+                   service::ServiceGroup};
+use std::{cmp::Ordering,
+          mem,
+          str::FromStr};
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ServiceFile {
@@ -42,7 +41,8 @@ pub struct ServiceFile {
     pub incarnation:   u64,
     pub encrypted:     bool,
     pub filename:      String,
-    pub body:          Vec<u8>, // TODO: make this a String
+    pub body:          Vec<u8>,
+    pub uuid:          String,
 }
 
 impl PartialOrd for ServiceFile {
@@ -80,7 +80,8 @@ impl ServiceFile {
                       incarnation: 0,
                       encrypted: false,
                       filename: filename.into(),
-                      body }
+                      body,
+                      uuid: Uuid::new_v4().to_simple_ref().to_string() }
     }
 
     /// Encrypt the contents of the service file
@@ -124,7 +125,10 @@ impl FromProto<ProtoRumor> for ServiceFile {
                          encrypted:     payload.encrypted.unwrap_or(false),
                          filename:      payload.filename
                                                .ok_or(Error::ProtocolMismatch("filename"))?,
-                         body:          payload.body.unwrap_or_default(), })
+                         body:          payload.body.unwrap_or_default(),
+                         uuid:
+                             payload.uuid
+                                    .unwrap_or(Uuid::new_v4().to_simple_ref().to_string()), })
     }
 }
 
@@ -134,7 +138,8 @@ impl From<ServiceFile> for newscast::ServiceFile {
                                 incarnation:   Some(value.incarnation),
                                 encrypted:     Some(value.encrypted),
                                 filename:      Some(value.filename),
-                                body:          Some(value.body), }
+                                body:          Some(value.body),
+                                uuid:          Some(value.uuid), }
     }
 }
 
@@ -155,6 +160,8 @@ impl Rumor for ServiceFile {
     fn id(&self) -> &str { &self.filename }
 
     fn key(&self) -> &str { &self.service_group }
+
+    fn uuid(&self) -> &str { &self.uuid }
 }
 
 #[cfg(test)]
