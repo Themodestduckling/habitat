@@ -655,9 +655,9 @@ impl Manager {
             .expect("Updater lock poisoned")
             .add(&service);
 
-        events::event(events::ServiceStarted { ident:         &service.pkg.ident,
-                                               spec_ident:    &spec.ident,
-                                               service_group: &service.service_group, });
+        events::publish(events::ServiceStarted { ident:         &service.pkg.ident,
+                                                 spec_ident:    &spec.ident,
+                                                 service_group: &service.service_group, });
 
         self.state
             .services
@@ -1177,7 +1177,7 @@ impl Manager {
         // TODO (CM): But only if we're not going down for a restart.
         let ident = service.spec_ident.clone();
         let stop_it = service.stop().then(move |_| {
-                                        events::event(events::ServiceStopped {
+                                        events::publish(events::ServiceStopped {
                 ident: &service.pkg.ident,
                 //                spec_ident: &service.spec.ident,
                 service_group: &service.service_group,
