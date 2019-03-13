@@ -23,7 +23,8 @@ use std::{env,
                Stdout,
                Write},
           process::{self,
-                    Command}};
+                    Command},
+          str::FromStr};
 use uuid::Uuid;
 
 use crate::api_client::DisplayProgress;
@@ -42,6 +43,146 @@ use crate::error::{Error,
 pub const NONINTERACTIVE_ENVVAR: &str = "HAB_NONINTERACTIVE";
 
 pub const NOCOLORING_ENVVAR: &str = "HAB_NOCOLORING";
+
+pub const SYMBOL_STYLE_ENVVAR: &str = "HAB_SYMBOL_STYLE";
+
+#[derive(Clone, Copy)]
+pub enum UIColor {
+    Plain,
+    Info,
+    Important,
+    Warn,
+    Critical,
+    End,
+}
+
+impl UIColor {
+    pub fn to_color(&self) -> Color {
+        match *self {
+            UIColor::Plain => Color::White,
+            UIColor::Info => Color::Green,
+            UIColor::Important => Color::Cyan,
+            UIColor::Critical => Color::Red,
+            UIColor::End => Color::Magenta,
+            UIColor::Warn => Color::Yellow,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum UISymbolStyle {
+    Full,
+    Limited,
+    Ascii,
+}
+
+impl Default for UISymbolStyle {
+    fn default() -> UISymbolStyle { UISymbolStyle::Full }
+}
+
+impl FromStr for UISymbolStyle {
+    type Err = Error;
+
+    fn from_str(value: &str) -> Result<Self> {
+        match value.to_lowercase().as_ref() {
+            "full" => Ok(UISymbolStyle::Full),
+            "limited" => Ok(UISymbolStyle::Limited),
+            "ascii" => Ok(UISymbolStyle::Ascii),
+            _ => Err(Error::BadSymbolStyle(value.to_string())),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum UISymbol {
+    UpArrow,
+    FingerPoint,
+    CheckMark,
+    BoxedCheckMark,
+    Omega,
+    BoxedX,
+    RightArrow,
+    Cloud,
+    DownArrow,
+    Elipses,
+    DottedTriangle,
+    RightShift,
+    Star,
+    SlashedZero,
+    ErrorX,
+}
+
+impl UISymbol {
+    pub fn to_str(&self) -> &str {
+        let style = if let Ok(s) = env::var(SYMBOL_STYLE_ENVVAR) {
+            UISymbolStyle::from_str(&s).unwrap_or_default()
+        } else if cfg!(target_os = "windows") {
+            UISymbolStyle::Limited
+        } else {
+            UISymbolStyle::default()
+        };
+
+        match style {
+            UISymbolStyle::Ascii => {
+                match *self {
+                    UISymbol::UpArrow => "^",
+                    UISymbol::FingerPoint => "->",
+                    UISymbol::CheckMark => "[x]",
+                    UISymbol::BoxedCheckMark => "#",
+                    UISymbol::Omega => "->",
+                    UISymbol::BoxedX => "X",
+                    UISymbol::RightArrow => "->",
+                    UISymbol::Cloud => "->",
+                    UISymbol::DownArrow => ">",
+                    UISymbol::Elipses => "...",
+                    UISymbol::DottedTriangle => "?",
+                    UISymbol::RightShift => ">>",
+                    UISymbol::Star => "*",
+                    UISymbol::SlashedZero => "0",
+                    UISymbol::ErrorX => "XXX",
+                }
+            }
+            UISymbolStyle::Limited => {
+                match *self {
+                    UISymbol::UpArrow => "↑",
+                    UISymbol::FingerPoint => "→",
+                    UISymbol::CheckMark => "√",
+                    UISymbol::BoxedCheckMark => "⌂",
+                    UISymbol::Omega => "Ω",
+                    UISymbol::BoxedX => "░",
+                    UISymbol::RightArrow => "→",
+                    UISymbol::Cloud => "⌂",
+                    UISymbol::DownArrow => "↓",
+                    UISymbol::Elipses => "…",
+                    UISymbol::DottedTriangle => "‼",
+                    UISymbol::RightShift => "»",
+                    UISymbol::Star => "≡",
+                    UISymbol::SlashedZero => "Ø",
+                    UISymbol::ErrorX => "XXX",
+                }
+            }
+            UISymbolStyle::Full => {
+                match *self {
+                    UISymbol::UpArrow => "↑",
+                    UISymbol::FingerPoint => "☛",
+                    UISymbol::CheckMark => "√",
+                    UISymbol::BoxedCheckMark => "☑",
+                    UISymbol::Omega => "Ω",
+                    UISymbol::BoxedX => "☒",
+                    UISymbol::RightArrow => "→",
+                    UISymbol::Cloud => "☁",
+                    UISymbol::DownArrow => "↓",
+                    UISymbol::Elipses => "…",
+                    UISymbol::DottedTriangle => "∵",
+                    UISymbol::RightShift => "»",
+                    UISymbol::Star => "★",
+                    UISymbol::SlashedZero => "Ø",
+                    UISymbol::ErrorX => "✗✗✗",
+                }
+            }
+        }
+    }
+}
 
 pub enum Status {
     Applying,
@@ -77,46 +218,48 @@ pub enum Status {
     Using,
     Verified,
     Verifying,
-    Custom(char, String),
+    Custom(UISymbol, String),
 }
 
 impl Status {
-    pub fn parts(&self) -> (char, String, Color) {
+    pub fn parts(&self) -> (UISymbol, String, UIColor) {
         match *self {
-            Status::Applying => ('↑', "Applying".into(), Color::Green),
-            Status::Added => ('↑', "Added".into(), Color::Green),
-            Status::Adding => ('☛', "Adding".into(), Color::Green),
-            Status::Canceled => ('✓', "Canceled".into(), Color::Green),
-            Status::Canceling => ('☛', "Canceling".into(), Color::Green),
-            Status::Cached => ('☑', "Cached".into(), Color::Green),
-            Status::Created => ('✓', "Created".into(), Color::Green),
-            Status::Creating => ('Ω', "Creating".into(), Color::Green),
-            Status::Deleted => ('✓', "Deleted".into(), Color::Green),
-            Status::Deleting => ('☒', "Deleting".into(), Color::Green),
-            Status::Demoted => ('✓', "Demoted".into(), Color::Green),
-            Status::Demoting => ('→', "Demoting".into(), Color::Green),
-            Status::Determining => ('☁', "Determining".into(), Color::Green),
-            Status::Downloading => ('↓', "Downloading".into(), Color::Green),
-            Status::DryRunDeleting => ('☒', "Would be deleted (Dry run)".into(), Color::Red),
-            Status::Encrypting => ('☛', "Encrypting".into(), Color::Green),
-            Status::Encrypted => ('✓', "Encrypted".into(), Color::Green),
-            Status::Executing => ('☛', "Executing".into(), Color::Green),
-            Status::Found => ('→', "Found".into(), Color::Cyan),
-            Status::Generated => ('→', "Generated".into(), Color::Cyan),
-            Status::Generating => ('☛', "Generating".into(), Color::Green),
-            Status::Installed => ('✓', "Installed".into(), Color::Green),
-            Status::Missing => ('∵', "Missing".into(), Color::Red),
-            Status::Promoted => ('✓', "Promoted".into(), Color::Green),
-            Status::Promoting => ('→', "Promoting".into(), Color::Green),
-            Status::Signed => ('✓', "Signed".into(), Color::Cyan),
-            Status::Signing => ('☛', "Signing".into(), Color::Cyan),
-            Status::Skipping => ('…', "Skipping".into(), Color::Green),
-            Status::Uploaded => ('✓', "Uploaded".into(), Color::Green),
-            Status::Uploading => ('↑', "Uploading".into(), Color::Green),
-            Status::Using => ('→', "Using".into(), Color::Green),
-            Status::Verified => ('✓', "Verified".into(), Color::Green),
-            Status::Verifying => ('☛', "Verifying".into(), Color::Green),
-            Status::Custom(c, ref s) => (c, s.to_string(), Color::Green),
+            Status::Applying => (UISymbol::UpArrow, "Applying".into(), UIColor::Info),
+            Status::Added => (UISymbol::UpArrow, "Added".into(), UIColor::Info),
+            Status::Adding => (UISymbol::FingerPoint, "Adding".into(), UIColor::Info),
+            Status::Canceled => (UISymbol::CheckMark, "Canceled".into(), UIColor::Info),
+            Status::Canceling => (UISymbol::FingerPoint, "Canceling".into(), UIColor::Info),
+            Status::Cached => (UISymbol::BoxedCheckMark, "Cached".into(), UIColor::Info),
+            Status::Created => (UISymbol::CheckMark, "Created".into(), UIColor::Info),
+            Status::Creating => (UISymbol::Omega, "Creating".into(), UIColor::Info),
+            Status::Deleted => (UISymbol::CheckMark, "Deleted".into(), UIColor::Info),
+            Status::Deleting => (UISymbol::BoxedX, "Deleting".into(), UIColor::Info),
+            Status::Demoted => (UISymbol::CheckMark, "Demoted".into(), UIColor::Info),
+            Status::Demoting => (UISymbol::RightArrow, "Demoting".into(), UIColor::Info),
+            Status::Determining => (UISymbol::Cloud, "Determining".into(), UIColor::Info),
+            Status::Downloading => (UISymbol::DownArrow, "Downloading".into(), UIColor::Info),
+            Status::DryRunDeleting => {
+                (UISymbol::BoxedX, "Would be deleted (Dry run)".into(), UIColor::Critical)
+            }
+            Status::Encrypting => (UISymbol::FingerPoint, "Encrypting".into(), UIColor::Info),
+            Status::Encrypted => (UISymbol::CheckMark, "Encrypted".into(), UIColor::Info),
+            Status::Executing => (UISymbol::FingerPoint, "Executing".into(), UIColor::Info),
+            Status::Found => (UISymbol::RightArrow, "Found".into(), UIColor::Important),
+            Status::Generated => (UISymbol::RightArrow, "Generated".into(), UIColor::Important),
+            Status::Generating => (UISymbol::FingerPoint, "Generating".into(), UIColor::Info),
+            Status::Installed => (UISymbol::CheckMark, "Installed".into(), UIColor::Info),
+            Status::Missing => (UISymbol::DottedTriangle, "Missing".into(), UIColor::Critical),
+            Status::Promoted => (UISymbol::CheckMark, "Promoted".into(), UIColor::Info),
+            Status::Promoting => (UISymbol::RightArrow, "Promoting".into(), UIColor::Info),
+            Status::Signed => (UISymbol::CheckMark, "Signed".into(), UIColor::Important),
+            Status::Signing => (UISymbol::FingerPoint, "Signing".into(), UIColor::Important),
+            Status::Skipping => (UISymbol::Elipses, "Skipping".into(), UIColor::Info),
+            Status::Uploaded => (UISymbol::CheckMark, "Uploaded".into(), UIColor::Info),
+            Status::Uploading => (UISymbol::UpArrow, "Uploading".into(), UIColor::Info),
+            Status::Using => (UISymbol::RightArrow, "Using".into(), UIColor::Info),
+            Status::Verified => (UISymbol::CheckMark, "Verified".into(), UIColor::Info),
+            Status::Verifying => (UISymbol::FingerPoint, "Verifying".into(), UIColor::Info),
+            Status::Custom(c, ref s) => (c, s.to_string(), UIColor::Info),
         }
     }
 }
@@ -152,20 +295,22 @@ pub trait UIWriter {
     fn begin<T>(&mut self, message: T) -> io::Result<()>
         where T: fmt::Display
     {
-        let symbol = '»';
+        let symbol = UISymbol::RightShift.to_str();
         println(self.out(),
                 format!("{} {}", symbol, message).as_bytes(),
-                ColorSpec::new().set_fg(Some(Color::Yellow)).set_bold(true))
+                ColorSpec::new().set_fg(Some(UIColor::Warn.to_color()))
+                                .set_bold(true))
     }
 
     /// Write a message formatted with `end`.
     fn end<T>(&mut self, message: T) -> io::Result<()>
         where T: fmt::Display
     {
-        let symbol = '★';
+        let symbol = UISymbol::Star.to_str();
         println(self.out(),
                 format!("{} {}", symbol, message).as_bytes(),
-                ColorSpec::new().set_fg(Some(Color::Magenta)).set_bold(true))
+                ColorSpec::new().set_fg(Some(UIColor::End.to_color()))
+                                .set_bold(true))
     }
 
     /// Write a message formatted with `status`.
@@ -174,8 +319,9 @@ pub trait UIWriter {
     {
         let (symbol, status_str, color) = status.parts();
         print(self.out(),
-              format!("{} {}", symbol, status_str).as_bytes(),
-              ColorSpec::new().set_fg(Some(color)).set_bold(true))?;
+              format!("{} {}", symbol.to_str(), status_str).as_bytes(),
+              ColorSpec::new().set_fg(Some(color.to_color()))
+                              .set_bold(true))?;
         self.out().write_all(format!(" {}\n", message).as_bytes())?;
         self.out().flush()
     }
@@ -193,8 +339,9 @@ pub trait UIWriter {
         where T: fmt::Display
     {
         println(self.err(),
-                format!("∅ {}", message).as_bytes(),
-                ColorSpec::new().set_fg(Some(Color::Yellow)).set_bold(true))
+                format!("{} {}", UISymbol::SlashedZero.to_str(), message).as_bytes(),
+                ColorSpec::new().set_fg(Some(UIColor::Warn.to_color()))
+                                .set_bold(true))
     }
 
     /// Write a message formatted with `fatal`.
@@ -202,16 +349,19 @@ pub trait UIWriter {
         where T: fmt::Display
     {
         println(self.err(),
-                "✗✗✗".as_bytes(),
-                ColorSpec::new().set_fg(Some(Color::Red)).set_bold(true))?;
+                UISymbol::ErrorX.to_str().as_bytes(),
+                ColorSpec::new().set_fg(Some(UIColor::Critical.to_color()))
+                                .set_bold(true))?;
         for line in message.to_string().lines() {
             println(self.err(),
-                    format!("✗✗✗ {}", line).as_bytes(),
-                    ColorSpec::new().set_fg(Some(Color::Red)).set_bold(true))?;
+                    format!("{} {}", UISymbol::ErrorX.to_str(), line).as_bytes(),
+                    ColorSpec::new().set_fg(Some(UIColor::Critical.to_color()))
+                                    .set_bold(true))?;
         }
         println(self.err(),
-                "✗✗✗".as_bytes(),
-                ColorSpec::new().set_fg(Some(Color::Red)).set_bold(true))
+                UISymbol::ErrorX.to_str().as_bytes(),
+                ColorSpec::new().set_fg(Some(UIColor::Critical.to_color()))
+                                .set_bold(true))
     }
 
     /// Write a message formatted with `title`.
@@ -223,7 +373,8 @@ pub trait UIWriter {
                         text.as_ref(),
                         "",
                         width = text.as_ref().chars().count()).as_bytes(),
-                ColorSpec::new().set_fg(Some(Color::Green)).set_bold(true))
+                ColorSpec::new().set_fg(Some(UIColor::Info.to_color()))
+                                .set_bold(true))
     }
 
     /// Write a message formatted with `heading`.
@@ -232,7 +383,8 @@ pub trait UIWriter {
     {
         println(self.out(),
                 format!("{}\n", text.as_ref()).as_bytes(),
-                ColorSpec::new().set_fg(Some(Color::Green)).set_bold(true))
+                ColorSpec::new().set_fg(Some(UIColor::Info.to_color()))
+                                .set_bold(true))
     }
 
     /// Write a message formatted with `para`.
@@ -356,16 +508,17 @@ impl UIReader for UI {
         loop {
             print(stream,
                   question.as_bytes(),
-                  ColorSpec::new().set_fg(Some(Color::Cyan)))?;
+                  ColorSpec::new().set_fg(Some(UIColor::Important.to_color())))?;
             print(stream,
                   format!(" {}", prefix).as_bytes(),
-                  ColorSpec::new().set_fg(Some(Color::White)))?;
+                  ColorSpec::new().set_fg(Some(UIColor::Plain.to_color())))?;
             print(stream,
                   default_text.as_bytes(),
-                  ColorSpec::new().set_fg(Some(Color::White)).set_bold(true))?;
+                  ColorSpec::new().set_fg(Some(UIColor::Plain.to_color()))
+                                  .set_bold(true))?;
             print(stream,
                   format!("{} ", suffix).as_bytes(),
-                  ColorSpec::new().set_fg(Some(Color::White)))?;
+                  ColorSpec::new().set_fg(Some(UIColor::Plain.to_color())))?;
             let mut response = String::new();
             {
                 let reference = self.shell.input.by_ref();
@@ -391,16 +544,19 @@ impl UIReader for UI {
         loop {
             print(stream,
                   question.as_bytes(),
-                  ColorSpec::new().set_fg(Some(Color::Cyan)))?;
+                  ColorSpec::new().set_fg(Some(UIColor::Important.to_color())))?;
             stream.write_all(b": ")?;
             if let Some(d) = default {
                 print(stream,
                       b"[default: ",
-                      ColorSpec::new().set_fg(Some(Color::White)))?;
+                      ColorSpec::new().set_fg(Some(UIColor::Plain.to_color())))?;
                 print(stream,
                       d.as_bytes(),
-                      ColorSpec::new().set_fg(Some(Color::White)).set_bold(true))?;
-                print(stream, b"]", ColorSpec::new().set_fg(Some(Color::White)))?;
+                      ColorSpec::new().set_fg(Some(UIColor::Plain.to_color()))
+                                      .set_bold(true))?;
+                print(stream,
+                      b"]",
+                      ColorSpec::new().set_fg(Some(UIColor::Plain.to_color())))?;
             }
             stream.write_all(b" ")?;
             stream.flush()?;

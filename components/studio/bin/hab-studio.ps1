@@ -293,6 +293,11 @@ function Enter-Studio {
   New-Studio
   Write-HabInfo "Entering Studio at $HAB_STUDIO_ROOT"
   $env:STUDIO_SCRIPT_ROOT = $PSScriptRoot
+  if (Test-InContainer) {
+    $env:HAB_SYMBOL_STYLE="ascii"
+    SETX HAB_SYMBOL_STYLE ascii /m
+    Restart-Service Habitat
+  }
   & "$PSScriptRoot\powershell\pwsh.exe" -NoProfile -ExecutionPolicy bypass -NoLogo -NoExit -Command {
     function prompt {
       Write-Host "[HAB-STUDIO]" -NoNewLine -ForegroundColor Green
